@@ -1,0 +1,11 @@
+python-dotenv
+pydantic
+pydantic-settings
+fastapi
+uvicorn
+streamlit
+requests
+httpx
+Pillow
+aiofiles
+html2text
