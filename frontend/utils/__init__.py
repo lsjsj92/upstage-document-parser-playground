@@ -1,0 +1,1 @@
+from frontend.utils.config import config
