@@ -18,30 +18,11 @@ class UpstageClient:
         
         if not self.api_key:
             raise ValueError("Upstage API key is required. Please set UPSTAGE_API_KEY in environment variables.")
-        
+            
     async def parse_document_with_hybrid_extraction(self, file_path: Path, extract_images: bool = True) -> ParsedDocument:
-        """
-        parsing with a hybrid 4-stage pipeline:
-        1. Primary document parsing to get structure and images.
-        2. Analyze elements to identify OCR candidates.
-        3. Perform targeted OCR on image elements.
-        4. Merge OCR results back into the original elements.
-        """
-        print(f"[UpstageClient] Starting hybrid parsing for: {file_path.name}")
+        print(f"[UpstageClient] Starting parsing for: {file_path.name}")
         
-        # Stage 1: Primary document parsing with enhanced image extraction
-        primary_result = await self._primary_document_parsing(file_path, extract_images)
-        
-        # Stage 2, 3, 4: Analyze, Enhance with OCR, and Merge results
-        if primary_result and primary_result.elements:
-            enhanced_elements = await self._enhance_elements_with_ocr(primary_result.elements)
-            primary_result.elements = enhanced_elements
-        
-        print(f"[UpstageClient] Hybrid parsing completed. Total elements: {len(primary_result.elements) if primary_result else 0}")
-        return primary_result
-
-    async def _primary_document_parsing(self, file_path: Path, extract_images: bool = True) -> ParsedDocument:
-        """Helper for Stage 1: Calls document-parse API to get base structure and images."""
+        # 단일 API 호출로 모든 처리 완료
         headers = {"Authorization": f"Bearer {self.api_key}"}
         
         try:
@@ -52,11 +33,10 @@ class UpstageClient:
             
             data = {
                 "model": "document-parse",
-                "ocr": "force"
+                "ocr": "force"  # 이것만으로 충분! API가 모든 OCR 처리
             }
             
             if extract_images:
-                # Request base64 for all categories that might contain important text
                 data["base64_encoding"] = "['table', 'figure', 'chart', 'equation']"
             
             timeout = httpx.Timeout(600.0)
@@ -66,122 +46,22 @@ class UpstageClient:
                 response.raise_for_status()
                 result = response.json()
                 
-                print(f"[DEBUG] Primary parsing - Elements with images: {len([e for e in result.get('elements', []) if e.get('base64_encoding')])}")
-                return self._parse_response_enhanced(result)
+                parsed_data = self._parse_response(result)
+                
+                # OCR이 이미 적용된 이미지 요소들에 플래그 설정
+                if parsed_data and parsed_data.elements:
+                    for elem in parsed_data.elements:
+                        # 이미지가 있고 텍스트가 추출되었으면 OCR 완료로 표시
+                        if elem.base64_encoding and elem.content and elem.content.text:
+                            setattr(elem, '_ocr_enhanced', True)
+                            print(f"[DEBUG] Element {elem.id} already has OCR text: {len(elem.content.text)} chars")
+                
+                print(f"[UpstageClient] Parsing completed. Total elements: {len(parsed_data.elements) if parsed_data else 0}")
+                return parsed_data
                 
         except Exception as e:
-            print(f"[ERROR] Primary document parsing failed: {str(e)}")
+            print(f"[ERROR] Document parsing failed: {str(e)}")
             raise
-
-    async def _enhance_elements_with_ocr(self, elements: List[DocumentElement]) -> List[DocumentElement]:
-        """Helper for Stage 2 & 3: Identifies OCR candidates and runs OCR tasks concurrently."""
-        ocr_tasks = []
-        elements_to_keep = []
-
-        for element in elements:
-            # Stage 2: Identify OCR candidates. Strategy: Enhance ALL elements with an image.
-            if self._should_enhance_element_with_ocr(element):
-                print(f"[DEBUG] Scheduling OCR enhancement for element {element.id} (category: {element.category})")
-                ocr_tasks.append(self._enhance_single_element_with_ocr(element))
-            else:
-                elements_to_keep.append(element)
-        
-        if not ocr_tasks:
-            return elements_to_keep
-
-        # Stage 3: Process OCR tasks concurrently
-        print(f"[DEBUG] Processing {len(ocr_tasks)} OCR enhancement task")
-        semaphore = asyncio.Semaphore(5)  # Limit concurrent API calls to 5
-
-        async def bounded_ocr_task(task):
-            async with semaphore:
-                return await task
-        
-        bounded_tasks = [bounded_ocr_task(task) for task in ocr_tasks]
-        ocr_results = await asyncio.gather(*bounded_tasks, return_exceptions=True)
-        
-        enhanced_elements = []
-        for result in ocr_results:
-            if isinstance(result, DocumentElement):
-                enhanced_elements.append(result)
-            elif isinstance(result, Exception):
-                print(f"[WARNING] An OCR enhancement task failed: {result}")
-        
-        # Combine original elements with enhanced ones and sort by ID to maintain order
-        final_elements = elements_to_keep + enhanced_elements
-        final_elements.sort(key=lambda x: x.id)
-        
-        total_enhanced = len([e for e in final_elements if hasattr(e, '_ocr_enhanced') and e._ocr_enhanced])
-        print(f"[DEBUG] OCR enhancement completed. Total enhanced elements: {total_enhanced}")
-        
-        return final_elements
-
-    def _should_enhance_element_with_ocr(self, element: DocumentElement) -> bool:
-        """Determines if an element is a candidate for OCR enhancement."""
-        return bool(element.base64_encoding)
-
-    async def _enhance_single_element_with_ocr(self, element: DocumentElement) -> DocumentElement:
-        """Helper for Stage 4: Performs OCR and merges the result for a single element."""
-        try:
-            image_data = base64.b64decode(element.base64_encoding)
-            
-            # Call the specialized OCR model
-            ocr_result_text = await self._perform_ocr_on_image_data(image_data)
-            
-            if ocr_result_text:
-                print(f"[DEBUG] OCR extracted {len(ocr_result_text)} chars for element {element.id}")
-                
-                # Merge the OCR text with existing content
-                element.content.text = self._merge_text_content(
-                    original_text=element.content.text, 
-                    ocr_text=ocr_result_text
-                )
-                # You can also enhance html and markdown here if needed
-                element.content.markdown = f"![{element.category} Image Content]\n\n{ocr_result_text}"
-
-                # Add a flag to track that this element was enhanced
-                setattr(element, '_ocr_enhanced', True)
-            else:
-                setattr(element, '_ocr_enhanced', False)
-
-            return element
-            
-        except Exception as e:
-            print(f"[WARNING] OCR enhancement failed for element {element.id}: {e}")
-            setattr(element, '_ocr_enhanced', False)
-            return element
-
-    async def _perform_ocr_on_image_data(self, image_data: bytes) -> Optional[str]:
-        """Calls the Upstage OCR API on raw image data."""
-        headers = {"Authorization": f"Bearer {self.api_key}"}
-        
-        try:
-            files = {"document": ("image.png", image_data, "image/png")}
-            # OCR 활용
-            data = {"model": "ocr"}
-            
-            timeout = httpx.Timeout(120.0)
-            
-            async with httpx.AsyncClient(timeout=timeout) as client:
-                response = await client.post(self.base_url, headers=headers, files=files, data=data)
-                response.raise_for_status()
-                
-                result = response.json()
-                return result.get('text', '').strip()
-                
-        except Exception as e:
-            print(f"[WARNING] OCR API call failed: {e}")
-            return None
-
-    def _merge_text_content(self, original_text: str, ocr_text: str) -> str:
-        """Intelligently merges original and OCR text."""
-        original_clean = original_text.strip() if original_text else ""
-        ocr_clean = ocr_text.strip() if ocr_text else ""
-        
-        if len(ocr_clean) > 10:
-            return ocr_clean
-
-        return original_clean
 
     async def parse_document_with_image_extraction(self, file_path: Path, extract_images: bool = True) -> ParsedDocument:
         return await self.parse_document_with_hybrid_extraction(file_path, extract_images)
@@ -327,7 +207,7 @@ class UpstageClient:
                 response.raise_for_status()
                 result = response.json()
                 
-                return self._parse_response_enhanced(result)
+                return self._parse_response(result)
                 
         except Exception as e:
             raise Exception(f"Document parsing failed: {str(e)}")
@@ -351,7 +231,7 @@ class UpstageClient:
         }
         return content_types.get(extension, 'application/octet-stream')
     
-    def _parse_response_enhanced(self, response_data: Dict[str, Any]) -> ParsedDocument:
+    def _parse_response(self, response_data: Dict[str, Any]) -> ParsedDocument:
         """Parse API response into ParsedDocument"""
         try:
             elements = []
