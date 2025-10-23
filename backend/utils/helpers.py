@@ -1,8 +1,4 @@
 # project_path/backend/utils/helpers.py
-"""
-유틸리티 헬퍼 함수들
-Windows/Linux 호환성을 위한 공통 함수들을 제공합니다.
-"""
 
 import re, os
 import socket
