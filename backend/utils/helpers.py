@@ -18,10 +18,8 @@ def get_image_mime_type_from_base64(base64_string: str) -> Optional[str]:
                       판별 실패 시 None 반환
     """
     try:
-        # Decode the base64 string to get the image header bytes
-        decoded_data = base64.b64decode(base64_string[:20]) # First 20 chars are enough
+        decoded_data = base64.b64decode(base64_string[:20])
 
-        # Check for common image file format headers (Magic Numbers)
         if decoded_data.startswith(b'\x89PNG\r\n\x1a\n'):
             return 'image/png'
         elif decoded_data.startswith(b'\xff\xd8\xff'):
@@ -36,6 +34,6 @@ def get_image_mime_type_from_base64(base64_string: str) -> Optional[str]:
             # If unknown, default to jpeg as a common fallback
             return 'image/jpeg'
     except (base64.binascii.Error, IndexError):
-        # If decoding fails, it's not a valid base64 string for an image
+        # 디코딩 실패 시(base64가 아닌 것)
         return None
 

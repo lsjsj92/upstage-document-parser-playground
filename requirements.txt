@@ -1,11 +1,22 @@
+# Core Framework - Backend
+fastapi
+uvicorn
+
+# Core Framework - Frontend
+streamlit
+
+# Configuration & Environment
 python-dotenv
 pydantic
 pydantic-settings
-fastapi
-uvicorn
-streamlit
-requests
-httpx
-Pillow
-aiofiles
-html2text
+
+# HTTP Clients
+httpx  # Async HTTP client for Upstage API
+requests  # Sync HTTP client for Frontend
+
+# File & Data Processing
+aiofiles  # Async file I/O
+html2text  # HTML to Markdown conversion
+
+# Image Processing
+Pillow  # Image manipulation and visualization

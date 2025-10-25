@@ -1,3 +1,6 @@
+# local storage dir
+storage/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
@@ -164,6 +167,7 @@ dmypy.json
 
 # pytype static type analyzer
 .pytype/
+CLAUDE.md
 
 # Cython debug symbols
 cython_debug/

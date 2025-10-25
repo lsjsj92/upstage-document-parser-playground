@@ -48,7 +48,7 @@ class UpstageClient:
             
             data = {
                 "model": "document-parse",
-                "ocr": "force"  # 이것만으로 충분! API가 모든 OCR 처리
+                "ocr": "force"
             }
             
             if extract_images:

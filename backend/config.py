@@ -68,7 +68,6 @@ class Config(BaseSettings):
                 print(f"[Config] Runtime directory creation: {directory}")
                 directory.mkdir(parents=True, exist_ok=True)
 
-# Global configuration instance
 config = Config()
 
 # 초기 디렉토리 생성

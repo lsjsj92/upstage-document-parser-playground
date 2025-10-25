@@ -62,18 +62,16 @@ class FileProcessor:
         
         markdown_parts = []
         for elem in sorted_elements:
-            # For OCR enhanced or composite elements, the markdown is already well-structured
             if (hasattr(elem, '_ocr_enhanced') and elem._ocr_enhanced) or elem.category == 'composite_table':
                 if elem.content and elem.content.markdown:
                     markdown_parts.append(elem.content.markdown)
                 elif elem.content and elem.content.text:
                     markdown_parts.append(elem.content.text)
-            # For regular elements, use the original logic
             else:
                 html_content = elem.content.html
                 if html_content:
                     markdown_content = self.markdown_converter.handle(html_content).strip()
-                    elem.content.markdown = markdown_content # Save for consistency
+                    elem.content.markdown = markdown_content
                     markdown_parts.append(markdown_content)
 
         return "\n\n".join(part for part in markdown_parts if part)
