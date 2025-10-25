@@ -1,6 +1,5 @@
 # project_path/backend/routers/routes.py
 
-import aiofiles
 from backend.config import config
 from fastapi import APIRouter, UploadFile, File, HTTPException, Depends, Query
 from fastapi.responses import PlainTextResponse
@@ -12,8 +11,22 @@ from backend.models.document import DocumentRecord, DocumentElement
 
 router = APIRouter()
 
+# FileProcessor 싱글톤 인스턴스 생성
+# 매 요청마다 새로 생성하지 않고 재사용하여 불필요한 초기화 방지
+_file_processor_instance = None
+
 def get_file_processor():
-    return FileProcessor()
+    """
+    FileProcessor 인스턴스를 반환합니다.
+    싱글톤 패턴으로 구현되어 한 번만 생성되고 재사용됩니다.
+
+    Returns:
+        FileProcessor: 파일 처리 서비스 인스턴스
+    """
+    global _file_processor_instance
+    if _file_processor_instance is None:
+        _file_processor_instance = FileProcessor()
+    return _file_processor_instance
 
 @router.post("/upload", response_model=DocumentRecord)
 async def upload_file(
@@ -21,7 +34,16 @@ async def upload_file(
     processor: FileProcessor = Depends(get_file_processor)
 ):
     """
-    Upload file for parsing. OCR and text extraction are handled automatically by Upstage API.
+    파일을 업로드하고 파싱을 시작합니다.
+    - Upstage API를 통해 자동으로 OCR 및 텍스트 추출 수행
+    - 이미지 내 텍스트도 자동으로 추출됨
+    - 백그라운드에서 비동기로 파싱 진행
+
+    Args:
+        file: 업로드할 파일 (PDF, DOCX, PPTX, 이미지 등)
+
+    Returns:
+        DocumentRecord: 생성된 문서 레코드 (파싱은 백그라운드에서 진행)
     """
     try:
         file_content = await file.read()
@@ -46,67 +68,23 @@ async def upload_file(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to process document: {str(e)}")
 
-@router.get("/documents/{doc_id}/statistics")
-async def get_document_statistics(
-    doc_id: str,
-    processor: FileProcessor = Depends(get_file_processor)
-):
-    """Get document parsing statistics"""
-    try:
-        stats = await processor.get_parsing_statistics(doc_id)
-        if not stats:
-            raise HTTPException(status_code=404, detail="Document statistics not found.")
-        return stats
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to retrieve statistics: {str(e)}")
-
-@router.get("/documents/{doc_id}/images")
-async def get_document_images(
-    doc_id: str,
-    processor: FileProcessor = Depends(get_file_processor)
-):
-    """Get images extracted from document"""
-    try:
-        images = await processor.extract_images_from_document(doc_id)
-        
-        return {
-            "document_id": doc_id,
-            "total_images": len(images),
-            "images": images
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to extract images: {str(e)}")
-
-@router.post("/documents/{doc_id}/reprocess")
-async def reprocess_document(
-    doc_id: str,
-    processor: FileProcessor = Depends(get_file_processor)
-):
-    """Reprocess document - Upstage API automatically handles OCR"""
-    try:
-        options = {"extract_images": True}
-        
-        success = await processor.reprocess_document_with_enhanced_settings(doc_id, options)
-        if not success:
-            raise HTTPException(status_code=404, detail="Document not found or reprocessing failed.")
-        
-        return {
-            "message": "Document reprocessing started.", 
-            "document_id": doc_id
-        }
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Reprocessing failed: {str(e)}")
-
 @router.delete("/documents/{doc_id}")
 async def delete_document(
     doc_id: str,
     processor: FileProcessor = Depends(get_file_processor)
 ):
-    """Delete document"""
+    """
+    문서를 삭제합니다.
+    - 업로드된 원본 파일 삭제
+    - 파싱된 결과 파일 삭제
+    - 메타데이터에서 제거
+
+    Args:
+        doc_id: 삭제할 문서 ID
+
+    Returns:
+        message: 삭제 완료 메시지
+    """
     try:
         success = await processor.delete_document(doc_id)
         if not success:
@@ -116,140 +94,6 @@ async def delete_document(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to delete document: {str(e)}")
-
-@router.get("/documents/{doc_id}/elements")
-async def get_document_elements(
-    doc_id: str,
-    page: Optional[int] = Query(None, description="Filter by page number"),
-    category: Optional[str] = Query(None, description="Filter by category"),
-    ocr_enhanced: Optional[bool] = Query(None, description="Filter for OCR enhanced elements"),
-    processor: FileProcessor = Depends(get_file_processor)
-):
-    """Get document elements with filtering options"""
-    try:
-        record = await processor.get_document(doc_id)
-        if not record or not record.is_parsed:
-            raise HTTPException(status_code=404, detail="Parsed document not found.")
-        
-        elements = record.parsed_data.elements
-        
-        # Apply filters
-        if page is not None:
-            elements = [elem for elem in elements if elem.page == page]
-        
-        if category:
-            elements = [elem for elem in elements if elem.category == category]
-        
-        if ocr_enhanced is not None:
-            elements = [
-                elem for elem in elements 
-                if (hasattr(elem, '_ocr_enhanced') and elem._ocr_enhanced) == ocr_enhanced
-            ]
-        
-        # Add ocr_enhanced flag to response
-        enhanced_elements_response = []
-        for elem in elements:
-            elem_dict = elem.model_dump()
-            elem_dict['ocr_enhanced'] = hasattr(elem, '_ocr_enhanced') and elem._ocr_enhanced
-            enhanced_elements_response.append(elem_dict)
-            
-        ocr_enhanced_count = sum(1 for e in enhanced_elements_response if e.get('ocr_enhanced'))
-
-        return {
-            "document_id": doc_id,
-            "filters": {
-                "page": page,
-                "category": category,
-                "ocr_enhanced": ocr_enhanced
-            },
-            "total_elements": len(enhanced_elements_response),
-            "ocr_enhanced_count": ocr_enhanced_count,
-            "elements": enhanced_elements_response
-        }
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to retrieve elements: {str(e)}")
-
-@router.get("/documents/{doc_id}/hybrid-analysis")
-async def get_hybrid_analysis(
-    doc_id: str,
-    processor: FileProcessor = Depends(get_file_processor)
-):
-    """Get analysis summary for document - simplified version"""
-    try:
-        stats = await processor.get_parsing_statistics(doc_id)
-        if not stats:
-            raise HTTPException(status_code=404, detail="Document statistics not found.")
-        
-        total_elements = stats.get('total_elements', 0)
-        ocr_elements = stats.get('ocr_enhanced_elements', 0)
-        image_elements = stats.get('elements_with_images', 0)
-
-        return {
-            "document_id": doc_id,
-            "ocr_enhanced_elements": {
-                "count": ocr_elements,
-                "percentage": (ocr_elements / total_elements * 100) if total_elements > 0 else 0
-            },
-            "enhancement_effectiveness": {
-                "text_extraction_rate": (ocr_elements / image_elements * 100) if image_elements > 0 else 0,
-                "images_with_extracted_text": ocr_elements,
-                "total_images": image_elements
-            }
-        }
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to retrieve analysis: {str(e)}")
-
-@router.get("/documents/{doc_id}/markdown", response_class=PlainTextResponse)
-async def get_document_markdown(
-    doc_id: str,
-    processor: FileProcessor = Depends(get_file_processor)
-):
-    """Get full document content as Markdown"""
-    try:
-        record = await processor.get_document(doc_id)
-        if not record or not record.is_parsed:
-            raise HTTPException(status_code=404, detail="Parsed document not found.")
-        
-        markdown_content = record.parsed_data.content.markdown
-        if not markdown_content:
-            return "No Markdown content available for this document."
-
-        return PlainTextResponse(content=markdown_content, media_type="text/markdown")
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to retrieve Markdown: {str(e)}")
-
-@router.get("/queue/status")
-async def get_queue_status(
-    processor: FileProcessor = Depends(get_file_processor)
-):
-    """Get processing queue status"""
-    try:
-        status = await processor.get_processing_queue_status()
-        return status
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to retrieve queue status: {str(e)}")
-
-@router.get("/health")
-async def health_check():
-    """System health check"""
-    return {
-        "status": "healthy",
-        "features": [
-            "document_parsing",
-            "ocr_text_extraction",
-            "image_extraction", 
-            "coordinate_preservation",
-            "table_recognition",
-            "chart_recognition"
-        ]
-    }
 
 @router.get("/analytics/summary")
 async def get_analytics_summary(
@@ -289,68 +133,6 @@ async def get_analytics_summary(
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to retrieve analytics: {str(e)}")
-
-@router.get("/documents/{doc_id}/preview")
-async def get_document_preview(
-    doc_id: str,
-    page: int = Query(1, description="Page number to preview"),
-    processor: FileProcessor = Depends(get_file_processor)
-):
-    """Get document preview for specific page"""
-    try:
-        record = await processor.get_document(doc_id)
-        if not record or not record.is_parsed:
-            raise HTTPException(status_code=404, detail="Parsed document not found.")
-        
-        page_elements = [elem for elem in record.parsed_data.elements if elem.page == page]
-        
-        ocr_enhanced_elements = [elem for elem in page_elements if hasattr(elem, '_ocr_enhanced') and elem._ocr_enhanced]
-        image_elements = [elem for elem in page_elements if elem.base64_encoding]
-        
-        return {
-            "document_id": doc_id,
-            "page": page,
-            "total_pages": record.total_pages,
-            "elements": [elem.model_dump() for elem in page_elements],
-            "has_images": len(image_elements) > 0,
-            "element_count": len(page_elements),
-            "ocr_enhanced_count": len(ocr_enhanced_elements),
-            "image_count": len(image_elements)
-        }
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to retrieve preview: {str(e)}")
-
-@router.post("/upload/batch", response_model=List[DocumentRecord])
-async def upload_files_batch(
-    files: List[UploadFile] = File(...),
-    processor: FileProcessor = Depends(get_file_processor)
-):
-    """Batch file upload"""
-    try:
-        file_list = []
-        for file in files:
-            file_content = await file.read()
-            
-            is_valid, error_message = processor.validate_file(file.filename, len(file_content))
-            if not is_valid:
-                raise HTTPException(status_code=400, detail=f"{file.filename}: {error_message}")
-            
-            file_list.append({
-                'content': file_content,
-                'filename': file.filename,
-                'content_type': file.content_type or "application/octet-stream"
-            })
-        
-        options = {"extract_images": True}
-        
-        records = await processor.process_file_batch(file_list, options)
-        return records
-        
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Batch upload failed: {str(e)}")
 
 @router.get("/documents", response_model=List[DocumentRecord])
 async def get_documents(
@@ -397,23 +179,3 @@ async def get_document(
         return record
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get document: {str(e)}")
-
-@router.get("/system/api-test")
-async def test_upstage_api(
-    processor: FileProcessor = Depends(get_file_processor)
-):
-    """Test Upstage API connection"""
-    try:
-        test_result = await processor.upstage_client.test_api_connection()
-        
-        return {
-            "upstage_api_test": test_result,
-            "api_key_configured": bool(processor.upstage_client.api_key),
-            "api_url": processor.upstage_client.base_url
-        }
-    except Exception as e:
-        return {
-            "error": str(e),
-            "api_key_configured": bool(processor.upstage_client.api_key),
-            "api_url": processor.upstage_client.base_url
-        }

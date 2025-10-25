@@ -5,25 +5,34 @@ import html2text
 from pathlib import Path
 from typing import Optional, Dict, Any, List, Tuple
 from collections import defaultdict
-from backend.models.document import DocumentRecord, DocumentElement, ElementContent, Coordinate
+from backend.models.document import DocumentRecord, DocumentElement, ElementContent
 from backend.services.upstage_client import UpstageClient
 from backend.services.storage import StorageService
 from backend.config import config
 from backend.utils.helpers import get_image_mime_type_from_base64
 
 class FileProcessor:
-    
+
     def __init__(self):
+        """
+        FileProcessor를 초기화합니다.
+        - Upstage API 클라이언트 생성
+        - 스토리지 서비스 초기화
+        - Markdown 변환기 설정
+
+        Note: 싱글톤 패턴으로 사용되므로 애플리케이션 실행 중 1번만 초기화됩니다.
+        """
         # 디렉토리 존재 확인 및 생성
         config.ensure_directories_exist()
-        
+
         self.upstage_client = UpstageClient()
         self.storage_service = StorageService()
         self.markdown_converter = html2text.HTML2Text()
         self.markdown_converter.ignore_links = True
         self.markdown_converter.body_width = 0
-        
-        print(f"[FileProcessor] Initialized with hybrid parsing capabilities at: {config.STORAGE_DIR}")
+
+        print(f"[FileProcessor] Initialized with hybrid parsing capabilities")
+        print(f"[FileProcessor] Storage directory: {config.STORAGE_DIR}")
     
     async def process_file(self, file_content: bytes, filename: str, content_type: str, 
                          enhanced_options: Optional[Dict[str, Any]] = None) -> DocumentRecord:
@@ -113,96 +122,7 @@ class FileProcessor:
         image_elements = len([e for e in elements if e.base64_encoding])
         ocr_enhanced = len([e for e in elements if hasattr(e, '_ocr_enhanced') and e._ocr_enhanced])
         return f"Total Elements: {total_elements}, Image Elements: {image_elements}, OCR Enhanced: {ocr_enhanced}"
-    
-    async def process_file_batch(self, file_list: list, enhanced_options: Optional[Dict[str, Any]] = None) -> list:
-        """Batch file processing with hybrid parsing"""
-        tasks = []
-        for file_info in file_list:
-            task = self.process_file(
-                file_info['content'],
-                file_info['filename'],
-                file_info['content_type'],
-                enhanced_options
-            )
-            tasks.append(task)
-        
-        return await asyncio.gather(*tasks)
-    
-    async def get_parsing_statistics(self, doc_id: str) -> Dict[str, Any]:
-        """Get enhanced parsing statistics with OCR information."""
-        record = await self.storage_service.get_document_record(doc_id)
-        if not record or not record.parsed_data:
-            return {}
-        
-        elements = record.parsed_data.elements
-        stats = defaultdict(int)
-        category_stats = defaultdict(int)
 
-        for element in elements:
-            stats['total_elements'] += 1
-            category_stats[element.category] += 1
-            
-            if element.base64_encoding:
-                stats['elements_with_images'] += 1
-            
-            if hasattr(element, '_ocr_enhanced') and element._ocr_enhanced:
-                stats['ocr_enhanced_elements'] += 1
-            
-            if element.content and element.content.text:
-                text_len = len(element.content.text)
-                stats['total_text_length'] += text_len
-                if hasattr(element, '_ocr_enhanced') and element._ocr_enhanced:
-                    stats['ocr_text_length'] += text_len
-        
-        if elements:
-            stats['total_pages'] = max(element.page for element in elements)
-            stats['average_elements_per_page'] = stats['total_elements'] / stats['total_pages'] if stats['total_pages'] > 0 else 0
-        
-        stats['elements_by_category'] = category_stats
-        return stats
-    
-    async def extract_images_from_document(self, doc_id: str) -> list:
-        """Extract images from document with OCR enhancement information"""
-        record = await self.storage_service.get_document_record(doc_id)
-        if not record or not record.parsed_data:
-            return []
-        
-        images = []
-        for element in record.parsed_data.elements:
-            if element.base64_encoding and element.category in ['figure', 'chart', 'table']:
-                image_info = {
-                    'element_id': element.id,
-                    'category': element.category,
-                    'page': element.page,
-                    'base64_data': element.base64_encoding,
-                    'coordinates': [{'x': coord.x, 'y': coord.y} for coord in element.coordinates],
-                    'text_content': element.content.text if element.content else '',
-                    'html_content': element.content.html if element.content else '',
-                    'ocr_enhanced': hasattr(element, '_ocr_enhanced') and element._ocr_enhanced,  # New field
-                    'image_mime_type': element.image_mime_type or 'image/png'
-                }
-                images.append(image_info)
-        
-        return images
-    
-    async def reprocess_document_with_enhanced_settings(self, doc_id: str, new_options: Dict[str, Any]) -> bool:
-        """Reprocess document with new enhanced settings including hybrid parsing"""
-        try:
-            record = await self.storage_service.get_document_record(doc_id)
-            if not record:
-                return False
-            
-            # Ensure hybrid parsing is enabled for reprocessing
-            if 'hybrid_parsing' not in new_options:
-                new_options['hybrid_parsing'] = True
-            
-            await self._parse_document_hybrid_async(record, new_options)
-            return True
-            
-        except Exception as e:
-            print(f"Reprocessing failed for {doc_id}: {str(e)}")
-            return False
-    
     async def _update_parsing_status(self, doc_id: str, status: str, error_message: Optional[str] = None):
         """Update parsing status"""
         record = await self.storage_service.get_document_record(doc_id)
@@ -211,7 +131,7 @@ class FileProcessor:
             if error_message:
                 record.error_message = error_message
             await self.storage_service._save_metadata(record)
-    
+
     async def get_document(self, doc_id: str) -> Optional[DocumentRecord]:
         """Get document record"""
         return await self.storage_service.get_document_record(doc_id)
@@ -252,39 +172,7 @@ class FileProcessor:
             return False, "File too small. Please check if it's a valid document."
         
         return True, ""
-    
-    async def get_processing_queue_status(self) -> Dict[str, Any]:
-        """Get processing queue status with hybrid parsing information"""
-        all_docs = await self.get_all_documents()
-        
-        status_counts = {
-            'pending': 0,
-            'processing': 0,
-            'completed': 0,
-            'failed': 0
-        }
-        
-        hybrid_processed = 0
-        ocr_enhanced_docs = 0
-        
-        for doc in all_docs:
-            status_counts[doc.parsing_status] = status_counts.get(doc.parsing_status, 0) + 1
-            
-            # Check for hybrid processing indicators
-            if doc.parsing_status == 'completed' and doc.parsed_data:
-                elements = doc.parsed_data.elements
-                if any(hasattr(elem, '_ocr_enhanced') and elem._ocr_enhanced for elem in elements):
-                    ocr_enhanced_docs += 1
-                    hybrid_processed += 1
-        
-        return {
-            'queue_status': status_counts,
-            'total_documents': len(all_docs),
-            'success_rate': (status_counts['completed'] / len(all_docs) * 100) if all_docs else 0,
-            'hybrid_processed': hybrid_processed,  # New metric
-            'ocr_enhanced_documents': ocr_enhanced_docs  # New metric
-        }
-    
+
     def _analyze_and_enhance_elements(self, elements: List[DocumentElement]) -> List[DocumentElement]:
         """
         기존 파싱된 요소들을 분석하여 복합 구조를 감지하고 개선된 요소로 변환

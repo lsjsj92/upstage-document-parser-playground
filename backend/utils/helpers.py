@@ -1,19 +1,21 @@
 # project_path/backend/utils/helpers.py
 
-import re, os
-import socket
-import hashlib
-import platform
-from pathlib import Path
-from typing import Union, Optional
-import mimetypes
 import base64
 from typing import Optional
 
+
 def get_image_mime_type_from_base64(base64_string: str) -> Optional[str]:
     """
-    Decodes the first few bytes of a Base64 string to determine the image MIME type.
-    Base64 문자열의 시작 부분을 디코딩하여 실제 이미지 MIME 타입을 판별합니다.
+    Base64 인코딩된 이미지 문자열로부터 MIME 타입을 판별합니다.
+
+    매직 넘버(파일 시그니처)를 분석하여 실제 이미지 형식을 확인합니다.
+
+    Args:
+        base64_string: Base64로 인코딩된 이미지 데이터 문자열
+
+    Returns:
+        Optional[str]: 이미지 MIME 타입 (image/png, image/jpeg 등)
+                      판별 실패 시 None 반환
     """
     try:
         # Decode the base64 string to get the image header bytes

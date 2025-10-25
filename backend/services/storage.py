@@ -256,22 +256,3 @@ class StorageService:
                 return ParsedDocument(**data)
         except Exception:
             return None
-    
-    def get_file_path(self, doc_id: str) -> Optional[Path]:
-        """문서 ID로 파일 경로를 반환합니다."""
-        # 동기 버전 (Streamlit에서 사용)
-        import json
-        
-        if not self.metadata_file.exists():
-            return None
-        
-        try:
-            with open(self.metadata_file, 'r', encoding='utf-8') as f:
-                metadata = json.load(f)
-                record_data = metadata.get(doc_id)
-                if record_data:
-                    return Path(record_data['file_path'])
-        except Exception:
-            pass
-        
-        return None
