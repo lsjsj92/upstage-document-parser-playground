@@ -51,37 +51,42 @@ cp .env.tmp .env
 # 파일 구조
 
 .
-├── LICENSE
-├── README.md
-├── .env.tmp (.env 파일로 변경)
-├── asset
-├── backend
-│   ├── __init__.py
-│   ├── config.py
-│   ├── main.py
-│   ├── models
-│   │   ├── __init__.py
-│   │   └── document.py
-│   ├── routers
-│   │   ├── __init__.py
-│   │   └── routes.py
-│   ├── services
-│   │   ├── __init__.py
-│   │   ├── file_processor.py
-│   │   ├── storage.py
-│   │   └── upstage_client.py
-│   └── utils
-│   ├── __init__.py
-│   └── helpers.py
-├── frontend
-│   ├── __init__.py
-│   ├── app.py
-│   ├── components
-│   │   ├── __init__.py
-│   │   ├── document_viewer.py
-│   │   ├── element_viewer.py
-│   │   └── file_uploader.py
-│   └── utils
-│   ├── __init__.py
-│   └── config.py
-├── requirements.txt
+├── LICENSE  
+├── README.md  
+├── asset  
+│   ├── blog.png  
+│   ├── parsing_result.png  
+│   └── parsing_result_table.png  
+├── backend  
+│   ├── __init__.py  
+│   ├── config.py  
+│   ├── main.py  
+│   ├── models  
+│   │   ├── __init__.py  
+│   │   └── document.py  
+│   ├── routers  
+│   │   ├── __init__.py  
+│   │   └── routes.py  
+│   ├── services  
+│   │   ├── __init__.py  
+│   │   ├── file_processor.py  
+│   │   ├── storage.py  
+│   │   └── upstage_client.py  
+│   └── utils  
+│       ├── __init__.py  
+│       └── helpers.py  
+├── frontend  
+│   ├── __init__.py  
+│   ├── app.py  
+│   ├── components  
+│   │   ├── __init__.py  
+│   │   ├── document_viewer.py  
+│   │   └── file_uploader.py  
+│   └── utils  
+│       ├── __init__.py  
+│       └── config.py  
+├── requirements.txt  
+└── storage  
+    ├── metadata.json  # 파싱 실행 시 생성  
+    ├── parsed  # 파싱 결과 저장   
+    └── uploads # 업로드 파일 저장   
