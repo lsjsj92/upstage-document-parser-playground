@@ -64,7 +64,7 @@ class DocumentViewer:
     def _render_enhanced_main_view_with_hybrid(self, doc_data: Dict[str, Any], page_num: int):
         """
         Hybrid parsing 결과를 포함한 메인 뷰를 렌더링합니다.
-        - 탭 1: 좌표 기반 문서 레이아웃 재구성 + 전체 HTML 렌더링
+        - 탭 1: 원본 시각적 레이아웃 재구성 (이미지 우선) + 텍스트 콘텐츠 순차 렌더링 (이미지 제외)
         - 탭 2: 바운딩 박스 시각화 (OCR 향상 요소 강조)
         - 탭 3: 요소 상세 정보 (필터링 가능)
 
@@ -90,14 +90,14 @@ class DocumentViewer:
         tab1, tab2, tab3 = st.tabs(tab_titles)
 
         with tab1:
-            st.markdown("#### 좌표 기반 문서 레이아웃 재구성")
-            st.info("각 요소의 위치와 크기를 원본 문서와 유사하게 시각적으로 재구성한 결과입니다.")
+            st.markdown("#### 원본 시각적 레이아웃 재구성 (이미지 우선)")
+            st.info("원본 문서의 좌표를 기반으로 레이아웃을 재현합니다. 테이블/그림 등 이미지 데이터가 있는 요소는 이미지로 표시됩니다.")
             self._render_coordinate_preserved_content_with_hybrid(page_elements)
 
             st.markdown("---")
-            st.markdown("#### 페이지 전체 HTML 렌더링 (읽기 순서 기준)")
-            st.info("페이지 내 모든 요소의 HTML 콘텐츠를 순서대로 합쳐 렌더링한 결과입니다.")
-            
+            st.markdown("#### 텍스트 콘텐츠 순차 렌더링 (이미지 제외)")
+            st.info("모든 요소의 HTML 텍스트 콘텐츠를 읽기 순서대로 표시합니다. 이미지 데이터는 제외되며, 복사 및 검색이 가능합니다.")
+
             page_html_content = self._generate_page_html(page_elements)
             st.components.v1.html(page_html_content, height=600, scrolling=True)
 
@@ -112,6 +112,8 @@ class DocumentViewer:
         좌표 기반 콘텐츠를 렌더링합니다.
         원본 문서의 레이아웃을 최대한 보존하여 HTML로 재구성합니다.
 
+        이미지 데이터가 있는 요소는 이미지로, 없는 요소는 HTML 텍스트로 렌더링됩니다.
+
         Args:
             elements: 페이지 요소 리스트
         """
@@ -125,14 +127,14 @@ class DocumentViewer:
         """
         좌표 정보를 활용하여 원본 문서 레이아웃을 재현하는 HTML을 생성합니다.
         - 각 요소를 절대 위치(absolute position)로 배치
-        - OCR 향상 요소는 녹색 테두리로 강조 표시
-        - 이미지 요소의 경우 추출된 텍스트도 함께 표시
+        - 이미지 데이터(base64_encoding)가 있는 요소는 이미지로 렌더링 (우선순위 1)
+        - 이미지 데이터가 없는 요소는 HTML 콘텐츠로 렌더링
 
         Args:
             elements: 문서 요소 리스트
 
         Returns:
-            str: 렌더링 가능한 HTML 문자열
+            str: 렌더링 가능한 HTML 문자열 (이미지 우선 렌더링)
         """
         html_elements = []
         for elem in elements:
@@ -297,13 +299,15 @@ class DocumentViewer:
 
     def _generate_page_html(self, elements: List[Dict[str, Any]]) -> str:
         """
-        페이지의 모든 요소 HTML을 읽기 순서대로 합쳐서 하나의 HTML 문자열로 만듭니다.
+        페이지의 모든 요소 HTML 콘텐츠를 읽기 순서대로 합쳐서 하나의 HTML 문자열로 만듭니다.
+
+        Note: 이미지 데이터(base64_encoding)는 제외되며, content.html 필드만 사용합니다.
 
         Args:
             elements: 페이지 요소 리스트
 
         Returns:
-            str: 통합된 HTML 문자열
+            str: 통합된 HTML 문자열 (텍스트 콘텐츠만 포함)
         """
         # y 좌표(top) 기준으로 정렬하여 읽기 순서를 맞춤
         sorted_elements = sorted(
