@@ -39,7 +39,7 @@ pip install -r requirements.txt
 cp .env.tmp .env
 # .env 파일에 발급받은 API 키를 입력하세요.
 ```
-## 서버 실행 
+## 서버 실행
 1. 터미널 1: 백엔드 실행
 - python -m uvicorn backend.main:app --reload
 
@@ -50,43 +50,45 @@ cp .env.tmp .env
 
 # 파일 구조
 
+```
 .
-├── LICENSE  
-├── README.md  
-├── asset  
-│   ├── blog.png  
-│   ├── parsing_result.png  
-│   └── parsing_result_table.png  
-├── backend  
-│   ├── __init__.py  
-│   ├── config.py  
-│   ├── main.py  
-│   ├── models  
-│   │   ├── __init__.py  
-│   │   └── document.py  
-│   ├── routers  
-│   │   ├── __init__.py  
-│   │   └── routes.py  
-│   ├── services  
-│   │   ├── __init__.py  
-│   │   ├── file_processor.py  
-│   │   ├── storage.py  
-│   │   └── upstage_client.py  
-│   └── utils  
-│       ├── __init__.py  
-│       └── helpers.py  
-├── frontend  
-│   ├── __init__.py  
-│   ├── app.py  
-│   ├── components  
-│   │   ├── __init__.py  
-│   │   ├── document_viewer.py  
-│   │   └── file_uploader.py  
-│   └── utils  
-│       ├── __init__.py  
-│       └── config.py  
-├── requirements.txt  
-└── storage  
-    ├── metadata.json  # 파싱 실행 시 생성  
-    ├── parsed  # 파싱 결과 저장   
-    └── uploads # 업로드 파일 저장   
+├── LICENSE
+├── README.md
+├── asset
+│   ├── blog.png
+│   ├── parsing_result.png
+│   └── parsing_result_table.png
+├── backend
+│   ├── __init__.py
+│   ├── config.py
+│   ├── main.py
+│   ├── models
+│   │   ├── __init__.py
+│   │   └── document.py
+│   ├── routers
+│   │   ├── __init__.py
+│   │   └── routes.py
+│   ├── services
+│   │   ├── __init__.py
+│   │   ├── file_processor.py
+│   │   ├── storage.py
+│   │   └── upstage_client.py
+│   └── utils
+│       ├── __init__.py
+│       └── helpers.py
+├── frontend
+│   ├── __init__.py
+│   ├── app.py
+│   ├── components
+│   │   ├── __init__.py
+│   │   ├── document_viewer.py
+│   │   └── file_uploader.py
+│   └── utils
+│       ├── __init__.py
+│       └── config.py
+├── requirements.txt
+└── storage
+    ├── metadata.json  # 파싱 실행 시 생성
+    ├── parsed         # 파싱 결과 저장
+    └── uploads        # 업로드 파일 저장
+```
